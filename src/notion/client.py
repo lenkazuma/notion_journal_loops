@@ -1,5 +1,6 @@
 """
 Notion API client wrapper with retry logic.
+Compatible with notion-client v3 (data_sources.query replaces databases.query).
 """
 from __future__ import annotations
 
@@ -36,10 +37,13 @@ def query_database(
     page_size: int = 100,
     start_cursor: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Query a Notion database page (single page of results)."""
+    """
+    Query a Notion database (single page of results).
+    notion-client v3: uses data_sources.query instead of databases.query.
+    """
     client = get_client()
     kwargs: Dict[str, Any] = {
-        "database_id": database_id,
+        "data_source_id": database_id,
         "page_size": page_size,
     }
     if filter_obj:
@@ -48,7 +52,7 @@ def query_database(
         kwargs["sorts"] = sorts
     if start_cursor:
         kwargs["start_cursor"] = start_cursor
-    return client.databases.query(**kwargs)
+    return client.data_sources.query(**kwargs)
 
 
 @api_retry(max_attempts=6, min_wait=1.0, max_wait=60.0)
