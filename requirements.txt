@@ -1,0 +1,34 @@
+# Notion API
+notion-client>=2.2.1
+
+# HTTP & Retry
+httpx>=0.27.0
+tenacity>=8.3.0
+
+# Environment
+python-dotenv>=1.0.1
+
+# LLM Providers
+openai>=1.35.0
+anthropic>=0.30.0
+
+# Embeddings & ML
+numpy>=1.26.4
+scikit-learn>=1.5.0
+hdbscan>=0.8.38.post1
+
+# Text processing
+tiktoken>=0.7.0
+
+# Data
+pandas>=2.2.2
+
+# Similarity / MinHash
+datasketch>=1.6.5
+
+# Output
+rich>=13.7.1
+tqdm>=4.66.4
+
+# Utilities
+click>=8.1.7
