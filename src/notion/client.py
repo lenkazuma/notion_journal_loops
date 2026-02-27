@@ -67,14 +67,14 @@ def get_block_children(block_id: str, start_cursor: Optional[str] = None) -> Dic
 
 @api_retry(max_attempts=6, min_wait=1.0, max_wait=60.0)
 def update_page_properties(page_id: str, properties: Dict[str, Any]) -> Dict[str, Any]:
-    """Update properties on a Notion page."""
+    """Update properties on a Notion page (notion-client v3 compatible)."""
     client = get_client()
     return client.pages.update(page_id=page_id, properties=properties)
 
 
 @api_retry(max_attempts=6, min_wait=1.0, max_wait=60.0)
 def append_block_children(page_id: str, children: List[Dict]) -> Dict[str, Any]:
-    """Append block children to a page."""
+    """Append block children to a page (notion-client v3: children= kwarg)."""
     client = get_client()
     return client.blocks.children.append(block_id=page_id, children=children)
 
@@ -84,6 +84,13 @@ def update_block(block_id: str, block_data: Dict[str, Any]) -> Dict[str, Any]:
     """Update a specific block."""
     client = get_client()
     return client.blocks.update(block_id=block_id, **block_data)
+
+
+@api_retry(max_attempts=6, min_wait=1.0, max_wait=60.0)
+def update_database_properties(database_id: str, properties: Dict[str, Any]) -> Dict[str, Any]:
+    """Add or update properties on a Notion database schema (notion-client v3)."""
+    client = get_client()
+    return client.data_sources.update(data_source_id=database_id, properties=properties)
 
 
 def paginate_database(

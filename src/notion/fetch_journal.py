@@ -55,33 +55,80 @@ def _extract_title(page: Dict[str, Any]) -> str:
 def _extract_date(page: Dict[str, Any]) -> str:
     """
     Extract date from the configured date property.
-    Falls back to created_time.
+    Handles: date, formula (date result), created_time, last_edited_time, rollup.
+    Falls back to page created_time.
     Returns ISO date string (YYYY-MM-DD).
     """
     props = page.get("properties", {})
     created = page.get("created_time", "")
 
-    # Try configured date property
-    date_prop = props.get(NOTION_DATE_PROPERTY, {})
-    if date_prop:
-        dtype = date_prop.get("type", "")
-        if dtype == "date":
-            date_obj = date_prop.get("date") or {}
-            start = date_obj.get("start", "")
-            if start:
-                return start[:10]  # YYYY-MM-DD
-        elif dtype == "created_time":
-            val = date_prop.get("created_time", "")
-            if val:
-                return val[:10]
-        elif dtype == "last_edited_time":
-            val = date_prop.get("last_edited_time", "")
-            if val:
-                return val[:10]
+    # Try configured date property first, then any date/formula property
+    candidates = []
+    if NOTION_DATE_PROPERTY in props:
+        candidates.append(props[NOTION_DATE_PROPERTY])
+    # Also try "Created Date" and "Created" as common fallbacks
+    for fallback_name in ("Created Date", "Created", "Date", "日期"):
+        if fallback_name in props and fallback_name != NOTION_DATE_PROPERTY:
+            candidates.append(props[fallback_name])
 
-    # Fallback to created_time
+    for date_prop in candidates:
+        dtype = date_prop.get("type", "")
+        val = _parse_date_prop(date_prop, dtype)
+        if val:
+            return val
+
+    # Fallback to page-level created_time
     if created:
         return created[:10]
+    return ""
+
+
+def _parse_date_prop(prop: Dict[str, Any], dtype: str) -> str:
+    """Parse a single property value into YYYY-MM-DD string."""
+    if dtype == "date":
+        date_obj = prop.get("date") or {}
+        start = date_obj.get("start", "")
+        if start:
+            return start[:10]
+
+    elif dtype == "formula":
+        # Formula can return date, string, number, boolean
+        formula = prop.get("formula") or {}
+        ftype = formula.get("type", "")
+        if ftype == "date":
+            date_obj = formula.get("date") or {}
+            start = date_obj.get("start", "")
+            if start:
+                return start[:10]
+        elif ftype == "string":
+            s = formula.get("string", "") or ""
+            if s and len(s) >= 10:
+                return s[:10]
+
+    elif dtype == "created_time":
+        val = prop.get("created_time", "")
+        if val:
+            return val[:10]
+
+    elif dtype == "last_edited_time":
+        val = prop.get("last_edited_time", "")
+        if val:
+            return val[:10]
+
+    elif dtype == "rollup":
+        rollup = prop.get("rollup") or {}
+        rtype = rollup.get("type", "")
+        if rtype == "date":
+            date_obj = rollup.get("date") or {}
+            start = date_obj.get("start", "")
+            if start:
+                return start[:10]
+
+    elif dtype == "rich_text":
+        rich = prop.get("rich_text", [])
+        text = "".join(r.get("plain_text", "") for r in rich)
+        if text and len(text) >= 10:
+            return text[:10]
 
     return ""
 
