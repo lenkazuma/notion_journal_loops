@@ -74,6 +74,11 @@ def summarize_cluster(
 
     try:
         result = provider.chat_json(messages, temperature=0.3, max_tokens=1500)
+        # Ensure result is a dict (LLM might return a list in rare cases)
+        if isinstance(result, list):
+            result = result[0] if result else {}
+        if not isinstance(result, dict):
+            raise ValueError(f"Expected dict from LLM, got {type(result)}")
         result["cluster_id"] = cluster_id
         result["chunk_count"] = len(chunks)
         return result
