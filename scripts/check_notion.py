@@ -2,10 +2,9 @@
 import sys
 sys.path.insert(0, ".")
 
-from notion_client import Client
+from src.notion.client import get_client
 
-TOKEN = "NOTION_TOKEN_PLACEHOLDER"
-client = Client(auth=TOKEN)
+client = get_client()
 
 result = client.search(filter={"property": "object", "value": "data_source"})
 dbs = result.get("results", [])

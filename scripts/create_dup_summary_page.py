@@ -16,14 +16,14 @@ sys.path.insert(0, ".")
 from dotenv import load_dotenv
 load_dotenv(Path(__file__).parent.parent / ".env", override=True)
 
-from notion_client import Client
+from src.config import NOTION_DATABASE_ID
+from src.notion.client import get_client
 from src.utils.logger import get_logger
 
 logger = get_logger("create_dup_summary")
 
-TOKEN = "NOTION_TOKEN_PLACEHOLDER"
-DB_ID = "YOUR_NOTION_DATABASE_ID"
-client = Client(auth=TOKEN)
+DB_ID = NOTION_DATABASE_ID
+client = get_client()
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 

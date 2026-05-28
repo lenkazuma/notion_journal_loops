@@ -5,11 +5,11 @@ Verifies pages.update works with notion-client v3.
 import sys
 sys.path.insert(0, ".")
 
-from notion_client import Client
+from src.config import NOTION_DATABASE_ID
+from src.notion.client import get_client
 
-TOKEN = "NOTION_TOKEN_PLACEHOLDER"
-DB_ID = "YOUR_NOTION_DATABASE_ID"
-client = Client(auth=TOKEN)
+DB_ID = NOTION_DATABASE_ID
+client = get_client()
 
 # Get first page
 result = client.data_sources.query(data_source_id=DB_ID, page_size=1)

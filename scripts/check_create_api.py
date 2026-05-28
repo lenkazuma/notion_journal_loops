@@ -1,7 +1,11 @@
 """Inspect create method signatures."""
 import inspect
-from notion_client import Client
-c = Client(auth="NOTION_TOKEN_PLACEHOLDER")
+import sys
+sys.path.insert(0, ".")
+
+from src.notion.client import get_client
+
+c = get_client()
 
 print("=== pages.create signature ===")
 print(inspect.getsource(c.pages.create))

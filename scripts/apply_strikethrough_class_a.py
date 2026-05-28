@@ -19,13 +19,12 @@ sys.path.insert(0, ".")
 from dotenv import load_dotenv
 load_dotenv(Path(__file__).parent.parent / ".env", override=True)
 
-from notion_client import Client
+from src.notion.client import get_client
 from src.utils.logger import get_logger
 
 logger = get_logger("strikethrough_class_a")
 
-TOKEN = "NOTION_TOKEN_PLACEHOLDER"
-client = Client(auth=TOKEN)
+client = get_client()
 
 # ── URL-noise filter (same as create_dup_summary_page.py) ────────────────────
 

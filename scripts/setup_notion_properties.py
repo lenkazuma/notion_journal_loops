@@ -12,11 +12,11 @@ Properties created:
 import sys
 sys.path.insert(0, ".")
 
-from notion_client import Client
+from src.config import NOTION_DATABASE_ID
+from src.notion.client import get_client
 
-TOKEN = "NOTION_TOKEN_PLACEHOLDER"
-DB_ID = "YOUR_NOTION_DATABASE_ID"
-client = Client(auth=TOKEN)
+DB_ID = NOTION_DATABASE_ID
+client = get_client()
 
 NEEDED_PROPS = {
     "ClusterId":      {"number": {"format": "number"}},
