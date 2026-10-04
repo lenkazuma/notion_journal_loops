@@ -16,7 +16,7 @@ sys.path.insert(0, ".")
 from dotenv import load_dotenv
 load_dotenv(Path(__file__).parent.parent / ".env", override=True)
 
-from src.config import NOTION_DATABASE_ID
+from src.config import DUP_SIM_THRESHOLD, NOTION_DATABASE_ID, OPENAI_EMBED_MODEL, RAW_DIR
 from src.notion.client import get_client
 from src.utils.logger import get_logger
 
@@ -163,15 +163,16 @@ blocks: list[dict] = []
 blocks.append(callout(
     f"自动生成于 {now}。"
     f"仅分析 2024 年及以后的日记。"
-    f"使用 OpenAI text-embedding-3-small，相似度阈值 ≥ 0.92。",
+    f"使用 {OPENAI_EMBED_MODEL}，相似度阈值 ≥ {DUP_SIM_THRESHOLD}。",
     "🤖"
 ))
 blocks.append(divider())
 
 # ── overview ──────────────────────────────────────────────────────────────────
+total_pages = len(list((RAW_DIR / "pages").glob("*.json")))
 blocks.append(h2("📊 概览"))
 blocks.append(para(
-    rich(f"扫描日记总数：230 篇　　分析范围：2024-01-01 至今\n"
+    rich(f"扫描日记总数：{total_pages} 篇　　分析范围：2024-01-01 至今\n"
          f"发现文字重复：{len(text_dups)} 个片段，涉及 {len(text_rows)} 对页面\n"
          f"含图片/附件的页面（图片URL导致误报，已单独列出）：{len(image_rows)} 篇")
 ))
