@@ -61,13 +61,13 @@ def _block_to_text(block: Dict[str, Any], depth: int = 0) -> str:
         expr = content.get("expression", "")
         return f"{indent}$$ {expr} $$"
     elif btype in ("image", "video", "file", "pdf"):
-        url = (
-            content.get("external", {}).get("url", "")
-            or content.get("file", {}).get("url", "")
-        )
-        caption_rich = content.get("caption", [])
-        caption = _rich_text_to_str(caption_rich)
-        return f"{indent}[{btype}: {caption or url}]"
+        caption = _rich_text_to_str(content.get("caption", []))
+        if caption:
+            return f"{indent}[{btype}: {caption}]"
+        # Notion-hosted files carry short-lived signed S3 URLs that change on every fetch
+        # and make unrelated pages look alike to embeddings, so only keep external URLs.
+        url = content.get("external", {}).get("url", "")
+        return f"{indent}[{btype}: {url}]" if url else f"{indent}[{btype}]"
     elif btype == "bookmark":
         url = content.get("url", "")
         caption_rich = content.get("caption", [])

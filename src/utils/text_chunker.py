@@ -91,9 +91,11 @@ def chunk_text(
                     chunks.append(flush_buffer(sent_buf, len(chunks)))
                     sent_buf, sent_tokens = [], 0
                 if st > max_tokens:
-                    # Character-level split as last resort
-                    for i in range(0, len(sent), int(max_tokens * 2.5)):
-                        piece = sent[i: i + int(max_tokens * 2.5)]
+                    # Character-level split as last resort, sized from this sentence's own
+                    # chars-per-token ratio (CJK text is ~1 token per char, English ~4 chars).
+                    step = max(1, int(len(sent) * max_tokens / st))
+                    for i in range(0, len(sent), step):
+                        piece = sent[i: i + step]
                         if piece.strip():
                             chunks.append(Chunk(
                                 chunk_id=f"{page_id}_c{len(chunks)}",
