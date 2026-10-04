@@ -34,7 +34,8 @@ notion_journal_loops/
     chunks/             ← 分段缓存
     embeddings/         ← 向量缓存
     clusters/           ← 聚类结果缓存
-    outputs/            ← 最终报告（唯一提交到 git 的数据目录）
+    outputs/            ← 最终报告（同样被 .gitignore 排除，只保留 .gitkeep）
+  tests/                ← 单元测试（不需要 Notion / API Key）
   scripts/
     run_all.bat         ← Windows 批处理
     run_all.ps1         ← PowerShell
@@ -158,6 +159,8 @@ python -m src.pipeline.run_pipeline --force
 | `data/outputs/duplicates.csv` | 重复 chunk 映射表 |
 | `data/outputs/review_patch.md` | 审阅文件：显示哪些内容将被标记为重复 |
 
+> **隐私提示：** `data/` 下所有内容（原始页面、分段、向量、报告）都来自你的私人日记，已全部被 `.gitignore` 排除。不要用 `git add -f` 强行提交，也不要把页面标题、正文片段硬编码进脚本后推送到公开仓库。
+
 ---
 
 ## 写回 Notion（可选）
@@ -271,9 +274,20 @@ conda install -c conda-forge hdbscan
 - 增大（如 0.95）→ 更严格，减少误报
 - 减小（如 0.85）→ 更宽松，检测更多相似内容
 
+同一页面内部的段落不会被互相判为重复。Notion 托管图片的临时签名 URL 不再写入正文（只保留 `[image]` 或图片说明），因此含图片的页面不会再被误判为重复；如果你的缓存是旧版本生成的，请用 `--force` 重新运行一次。
+
 ---
 
 ## 开发说明
+
+### 运行测试
+
+```powershell
+pip install pytest
+pytest -q
+```
+
+测试覆盖分段、Notion block 转文本、相似度和重复检测，不访问网络。
 
 ### 添加新的 LLM Provider
 
