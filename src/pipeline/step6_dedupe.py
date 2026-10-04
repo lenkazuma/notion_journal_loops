@@ -1,8 +1,8 @@
 """
 Step 6: Detect duplicate/highly-similar chunks.
 Strategy:
-  - Primary: cosine similarity on embeddings
-  - Auxiliary: SimHash pre-filter (optional)
+  - Cosine similarity on embeddings, computed in batches
+  - Chunks from the same page are never paired with each other
   - "Earlier date wins" policy for canonical selection
 Output: data/clusters/duplicates.json
 """
@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 import pickle
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 import numpy as np
 
@@ -21,7 +21,6 @@ from src.config import (
     EMBEDDINGS_DIR,
 )
 from src.utils.logger import get_logger
-from src.utils.similarity import batch_cosine_similarity, simhash, simhash_similarity
 
 logger = get_logger("pipeline.step6")
 
@@ -35,62 +34,65 @@ def _parse_date(date_str: str) -> str:
     return date_str[:10]
 
 
-def _find_duplicates_in_group(
-    chunk_indices: List[int],
-    all_chunks: List[Dict],
-    embeddings: np.ndarray,
+def _make_record(chunk_a: Dict, chunk_b: Dict, sim: float) -> Dict:
+    """Build a duplicate record; the chunk from the earlier page is canonical."""
+    if _parse_date(chunk_a.get("page_date", "")) <= _parse_date(chunk_b.get("page_date", "")):
+        canonical, duplicate = chunk_a, chunk_b
+    else:
+        canonical, duplicate = chunk_b, chunk_a
+    return {
+        "dup_chunk_id": duplicate["chunk_id"],
+        "dup_page_id": duplicate["page_id"],
+        "dup_page_title": duplicate.get("page_title", ""),
+        "dup_date": duplicate.get("page_date", ""),
+        "dup_text": duplicate.get("text", ""),
+        "canonical_chunk_id": canonical["chunk_id"],
+        "canonical_page_id": canonical["page_id"],
+        "canonical_page_title": canonical.get("page_title", ""),
+        "canonical_date": canonical.get("page_date", ""),
+        "canonical_text": canonical.get("text", ""),
+        "similarity": round(sim, 6),
+        "cluster_id": duplicate.get("cluster_id", -1),
+    }
+
+
+def find_duplicates(
+    chunks: List[Dict],
+    labels: List[int],
+    normed: np.ndarray,
     threshold: float,
+    cross_cluster: bool = False,
+    batch_size: int = 512,
 ) -> List[Dict]:
     """
-    Find duplicate pairs within a group of chunk indices.
-    Returns list of duplicate records.
+    Return duplicate records for every pair of chunks with cosine similarity >= threshold.
+
+    `normed` must hold L2-normalised embeddings in the same order as `chunks`/`labels`.
+    Pairs from the same page are ignored (a page cannot duplicate itself), and pairs from
+    different clusters are only reported when `cross_cluster` is True.
+    Results are sorted by similarity, highest first.
     """
-    duplicates = []
-    n = len(chunk_indices)
-
+    n = len(chunks)
     if n < 2:
-        return duplicates
+        return []
 
-    # Build sub-matrix
-    sub_matrix = embeddings[chunk_indices]
+    label_arr = np.asarray(labels)
+    page_ids = [c["page_id"] for c in chunks]
+    records: List[Dict] = []
 
-    # Compare all pairs (upper triangle)
-    for i in range(n):
-        for j in range(i + 1, n):
-            sim = float(np.dot(sub_matrix[i], sub_matrix[j]) /
-                       (np.linalg.norm(sub_matrix[i]) * np.linalg.norm(sub_matrix[j]) + 1e-10))
+    for start in range(0, n, batch_size):
+        block = normed[start:start + batch_size] @ normed.T
+        rows, cols = np.nonzero(block >= threshold)
+        for r, j in zip(rows.tolist(), cols.tolist()):
+            i = start + r
+            if j <= i or page_ids[i] == page_ids[j]:
+                continue
+            if not cross_cluster and label_arr[i] != label_arr[j]:
+                continue
+            records.append(_make_record(chunks[i], chunks[j], float(block[r, j])))
 
-            if sim >= threshold:
-                idx_i = chunk_indices[i]
-                idx_j = chunk_indices[j]
-                chunk_i = all_chunks[idx_i]
-                chunk_j = all_chunks[idx_j]
-
-                date_i = _parse_date(chunk_i.get("page_date", ""))
-                date_j = _parse_date(chunk_j.get("page_date", ""))
-
-                # Earlier date = canonical
-                if date_i <= date_j:
-                    canonical, duplicate = chunk_i, chunk_j
-                else:
-                    canonical, duplicate = chunk_j, chunk_i
-
-                duplicates.append({
-                    "dup_chunk_id": duplicate["chunk_id"],
-                    "dup_page_id": duplicate["page_id"],
-                    "dup_page_title": duplicate.get("page_title", ""),
-                    "dup_date": duplicate.get("page_date", ""),
-                    "dup_text": duplicate.get("text", ""),
-                    "canonical_chunk_id": canonical["chunk_id"],
-                    "canonical_page_id": canonical["page_id"],
-                    "canonical_page_title": canonical.get("page_title", ""),
-                    "canonical_date": canonical.get("page_date", ""),
-                    "canonical_text": canonical.get("text", ""),
-                    "similarity": round(sim, 6),
-                    "cluster_id": duplicate.get("cluster_id", -1),
-                })
-
-    return duplicates
+    records.sort(key=lambda d: d["similarity"], reverse=True)
+    return records
 
 
 def run(
@@ -147,95 +149,28 @@ def run(
         raw = json.loads(cache.read_text(encoding="utf-8"))
         cluster_assignments = {int(k): v for k, v in raw.items()}
 
-    # Build index: chunk_id -> position in embeddings array
+    if chunk_ids is None:
+        raise ValueError("chunk_ids must be provided together with embeddings.")
     chunk_id_to_idx: Dict[str, int] = {cid: i for i, cid in enumerate(chunk_ids)}
 
-    # Flatten all chunks with their embedding indices
     all_chunks: List[Dict] = []
-    chunk_to_global_idx: Dict[str, int] = {}
-
+    labels: List[int] = []
+    rows: List[int] = []
     for cluster_id, chunks in cluster_assignments.items():
         for chunk in chunks:
-            cid = chunk["chunk_id"]
-            if cid in chunk_id_to_idx:
-                global_idx = len(all_chunks)
+            idx = chunk_id_to_idx.get(chunk["chunk_id"])
+            if idx is not None:
                 all_chunks.append(chunk)
-                chunk_to_global_idx[cid] = global_idx
+                labels.append(cluster_id)
+                rows.append(idx)
 
-    # Rebuild embeddings in all_chunks order
-    reordered_embeddings = np.zeros((len(all_chunks), embeddings.shape[1]), dtype=np.float32)
-    for i, chunk in enumerate(all_chunks):
-        cid = chunk["chunk_id"]
-        if cid in chunk_id_to_idx:
-            reordered_embeddings[i] = embeddings[chunk_id_to_idx[cid]]
+    reordered = np.asarray(embeddings, dtype=np.float32)[rows] if rows else np.zeros((0, 1), dtype=np.float32)
+    norms = np.linalg.norm(reordered, axis=1, keepdims=True)
+    normed = reordered / np.where(norms == 0, 1e-10, norms)
 
-    # L2-normalize
-    norms = np.linalg.norm(reordered_embeddings, axis=1, keepdims=True)
-    norms = np.where(norms == 0, 1e-10, norms)
-    normed = reordered_embeddings / norms
-
-    all_duplicates: List[Dict] = []
-    seen_pairs = set()
-
-    # Within-cluster deduplication (primary)
-    logger.info(f"Running within-cluster deduplication (threshold={sim_threshold})...")
-    for cluster_id, chunks in cluster_assignments.items():
-        indices = [
-            chunk_to_global_idx[c["chunk_id"]]
-            for c in chunks
-            if c["chunk_id"] in chunk_to_global_idx
-        ]
-        dups = _find_duplicates_in_group(indices, all_chunks, normed, sim_threshold)
-        for d in dups:
-            pair_key = tuple(sorted([d["dup_chunk_id"], d["canonical_chunk_id"]]))
-            if pair_key not in seen_pairs:
-                seen_pairs.add(pair_key)
-                all_duplicates.append(d)
-
-    logger.info(f"Within-cluster: {len(all_duplicates)} duplicates found")
-
-    # Cross-cluster deduplication (optional)
-    if do_cross_cluster:
-        logger.info("Running cross-cluster deduplication (this may take a while)...")
-        n = len(all_chunks)
-        # Use batched approach to avoid memory explosion
-        batch_size = 500
-        for i in range(0, n, batch_size):
-            query = normed[i]
-            sims = normed.dot(query)
-            # Find candidates above threshold (excluding self)
-            candidates = np.where((sims >= sim_threshold) & (np.arange(n) != i))[0]
-            for j in candidates:
-                pair_key = tuple(sorted([all_chunks[i]["chunk_id"], all_chunks[j]["chunk_id"]]))
-                if pair_key in seen_pairs:
-                    continue
-                seen_pairs.add(pair_key)
-                chunk_i = all_chunks[i]
-                chunk_j = all_chunks[j]
-                # Skip if same cluster (already handled)
-                if chunk_i.get("cluster_id") == chunk_j.get("cluster_id"):
-                    continue
-                date_i = _parse_date(chunk_i.get("page_date", ""))
-                date_j = _parse_date(chunk_j.get("page_date", ""))
-                if date_i <= date_j:
-                    canonical, duplicate = chunk_i, chunk_j
-                else:
-                    canonical, duplicate = chunk_j, chunk_i
-                all_duplicates.append({
-                    "dup_chunk_id": duplicate["chunk_id"],
-                    "dup_page_id": duplicate["page_id"],
-                    "dup_page_title": duplicate.get("page_title", ""),
-                    "dup_date": duplicate.get("page_date", ""),
-                    "dup_text": duplicate.get("text", ""),
-                    "canonical_chunk_id": canonical["chunk_id"],
-                    "canonical_page_id": canonical["page_id"],
-                    "canonical_page_title": canonical.get("page_title", ""),
-                    "canonical_date": canonical.get("page_date", ""),
-                    "canonical_text": canonical.get("text", ""),
-                    "similarity": round(float(sims[j]), 6),
-                    "cluster_id": duplicate.get("cluster_id", -1),
-                })
-        logger.info(f"Cross-cluster: total {len(all_duplicates)} duplicates")
+    scope = "within and across clusters" if do_cross_cluster else "within clusters"
+    logger.info(f"Running deduplication {scope} (threshold={sim_threshold})...")
+    all_duplicates = find_duplicates(all_chunks, labels, normed, sim_threshold, do_cross_cluster)
 
     # Cache
     DUPLICATES_CACHE.write_text(
